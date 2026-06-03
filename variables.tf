@@ -58,4 +58,11 @@ variable "rules" {
     ])
     error_message = "protocol must be one of: tcp, udp, icmp, gre."
   }
+  validation {
+    condition = alltrue([
+      for k, v in var.rules :
+      v.port_range == null ? true : can(regex("^\\d+(-\\d+)?$", v.port_range))
+    ])
+    error_message = "port_range must be a single port (e.g. '80') or a range (e.g. '8080-8090')."
+  }
 }

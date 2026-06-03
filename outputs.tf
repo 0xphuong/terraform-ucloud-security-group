@@ -7,3 +7,8 @@ output "name" {
   description = "The name of the security group"
   value       = ucloud_security_group.this.name
 }
+
+output "remark" {
+  description = "The remark of the security group"
+  value       = ucloud_security_group.this.remark
+}
