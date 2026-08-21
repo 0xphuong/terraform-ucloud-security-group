@@ -6,7 +6,8 @@ Terraform module to create a **Security Group** with multiple rules on [UCloud](
 
 - Creates one security group with any number of rules in a single module call
 - `cidr_block` accepts multiple CIDRs per rule — one inline rule block created per CIDR
-- Per-rule: `policy` (accept/drop), `priority` (high/medium/low), `protocol`, `port_range`
+- Per-rule: `policy` (accept/drop), `priority` (high/medium/low), `protocol` (list), `port_range`
+- `cidr_block` and `protocol` both take lists: one rule block per CIDR x protocol pair
 - Input validation: name length, policy/priority/protocol enum values
 - Outputs: security group ID and name
 
@@ -24,19 +25,19 @@ module "sg_web" {
   rules = {
     allow-http = {
       port_range = "80"
-      protocol   = "tcp"
+      protocol   = ["tcp"]
       cidr_block = ["0.0.0.0/0"]
       policy     = "accept"
     }
     allow-https = {
       port_range = "443"
-      protocol   = "tcp"
+      protocol   = ["tcp"]
       cidr_block = ["0.0.0.0/0"]
       policy     = "accept"
     }
     allow-ssh = {
       port_range = "22"
-      protocol   = "tcp"
+      protocol   = ["tcp"]
       cidr_block = ["203.0.113.10/32"]
       policy     = "accept"
       priority   = "high"
@@ -57,14 +58,14 @@ module "sg_app" {
     # Two CIDRs → two rule blocks created automatically
     allow-ssh = {
       port_range = "22"
-      protocol   = "tcp"
+      protocol   = ["tcp"]
       cidr_block = ["10.0.1.0/24", "192.168.1.0/24"]
       policy     = "accept"
       priority   = "high"
     }
     deny-all = {
       port_range = "1-65535"
-      protocol   = "tcp"
+      protocol   = ["tcp"]
       cidr_block = ["0.0.0.0/0"]
       policy     = "drop"
       priority   = "low"
@@ -93,6 +94,31 @@ module "sg_app" {
 |------|------|
 | ucloud_security_group.this | resource |
 
+## No "all protocols" value
+
+UCloud does not have one. The provider rejects `all`, `any` and their case variants at plan time:
+
+```
+Error: expected rules.0.protocol to be one of [tcp udp gre icmp], got all
+```
+
+So covering TCP and UDP needs two rule blocks. Rather than repeating the entry, list the protocols and
+the module expands them:
+
+```hcl
+rules = {
+  intra_vpc = {
+    cidr_block = ["10.0.0.0/16", "10.1.0.0/16"]
+    protocol   = ["tcp", "udp", "icmp"]
+    port_range = "1-65535"
+  }
+}
+# -> 6 rule blocks: every CIDR x protocol pair
+```
+
+`port_range` is required once the list contains `tcp` or `udp` — the provider refuses those without it.
+`icmp` and `gre` are accepted either way.
+
 ## Inputs
 
 | Name | Description | Type | Default | Required |
@@ -108,7 +134,7 @@ module "sg_app" {
 |-------|------|---------|----------|-------------|
 | `cidr_block` | `list(string)` | — | **yes** | One or more source CIDRs. One rule block created per CIDR. |
 | `port_range` | `string` | `null` | no | Port or range (e.g. `"80"`, `"8080-8090"`) |
-| `protocol` | `string` | `null` | no | `tcp` \| `udp` \| `icmp` \| `gre` |
+| `protocol` | `list(string)` | `null` | no | Any of `tcp`, `udp`, `icmp`, `gre`. One rule block per CIDR x protocol |
 | `policy` | `string` | `"accept"` | no | `accept` \| `drop` |
 | `priority` | `string` | `"medium"` | no | `high` \| `medium` \| `low` |
 

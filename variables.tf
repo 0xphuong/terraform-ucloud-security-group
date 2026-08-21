@@ -21,11 +21,11 @@ variable "remark" {
 }
 
 variable "rules" {
-  description = "Map of security group rules. Key is a logical name. cidr_block accepts multiple CIDRs — one rule block is created per CIDR."
+  description = "Map of security group rules. Key is a logical name. Both cidr_block and protocol take lists, and one rule block is created for every CIDR x protocol pair — UCloud has no 'all protocols' value, so tcp+udp has to be spelled out as two rules and this does that expansion."
   type = map(object({
     cidr_block = list(string)
+    protocol   = optional(list(string))
     port_range = optional(string)
-    protocol   = optional(string)
     policy     = optional(string, "accept")
     priority   = optional(string, "medium")
   }))
@@ -36,6 +36,12 @@ variable "rules" {
       for k, v in var.rules : length(v.cidr_block) > 0
     ])
     error_message = "Each rule must have at least one cidr_block."
+  }
+  validation {
+    condition = alltrue([
+      for k, v in var.rules : v.protocol == null ? true : length(v.protocol) > 0
+    ])
+    error_message = "protocol, when given, must list at least one protocol."
   }
   validation {
     condition = alltrue([
@@ -51,12 +57,17 @@ variable "rules" {
     ])
     error_message = "priority must be 'high', 'medium', or 'low'."
   }
+  # UCloud accepts no "all"/"any" here: the provider rejects anything outside
+  # this set at plan time with "expected protocol to be one of [tcp udp gre
+  # icmp]".
   validation {
-    condition = alltrue([
+    condition = alltrue(flatten([
       for k, v in var.rules :
-      v.protocol == null ? true : contains(["tcp", "udp", "icmp", "gre"], v.protocol)
-    ])
-    error_message = "protocol must be one of: tcp, udp, icmp, gre."
+      v.protocol == null ? [true] : [
+        for p in v.protocol : contains(["tcp", "udp", "icmp", "gre"], p)
+      ]
+    ]))
+    error_message = "Each protocol must be one of: tcp, udp, icmp, gre. UCloud has no 'all' value — list the protocols instead."
   }
   validation {
     condition = alltrue([
@@ -64,5 +75,18 @@ variable "rules" {
       v.port_range == null ? true : can(regex("^\\d+(-\\d+)?$", v.port_range))
     ])
     error_message = "port_range must be a single port (e.g. '80') or a range (e.g. '8080-8090')."
+  }
+  # The provider enforces this itself — '"port_range" must be set when
+  # "protocol" is "tcp" or "udp"' — but only once the expanded rule reaches it,
+  # which names a generated rule rather than the entry that produced it. icmp
+  # and gre are accepted with or without a port range.
+  validation {
+    condition = alltrue([
+      for k, v in var.rules :
+      v.protocol == null ? true : (
+        length(setintersection(toset(v.protocol), toset(["tcp", "udp"]))) > 0 ? v.port_range != null : true
+      )
+    ])
+    error_message = "port_range is required when protocol includes 'tcp' or 'udp'."
   }
 }

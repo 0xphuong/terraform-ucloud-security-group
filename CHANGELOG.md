@@ -7,6 +7,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-20
+
+### Changed
+- **BREAKING:** `rules[*].protocol` is now `list(string)` instead of `string`. Every rule expands to one
+  rule block per CIDR x protocol pair, matching how `cidr_block` already worked. Existing configurations
+  must wrap the value: `protocol = "tcp"` becomes `protocol = ["tcp"]`.
+
+  UCloud has no "all protocols" value — the provider rejects `all`, `any` and their case variants at plan
+  time with `expected protocol to be one of [tcp udp gre icmp]` — so covering tcp and udp genuinely needs
+  two rule blocks. Listing the protocols on one entry replaces repeating the whole entry per protocol.
+
+### Added
+- Validation that `port_range` is set when `protocol` includes `tcp` or `udp`. The provider enforces this
+  itself, but only once the expanded rule reaches it, so its error names a generated rule rather than the
+  entry that produced it. `icmp` and `gre` are accepted with or without a port range.
+- Validation that `protocol`, when given, is not an empty list.
+
+
 ## [1.1.0] - 2026-04-29
 
 ### Added
